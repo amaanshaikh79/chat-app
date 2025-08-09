@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Apna Chat App</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="chat-box">
+        <h1>Doston Se Baat Karo! 💬</h1>
+        
+        <div class="login-box">
+            <input type="text" id="username" placeholder="Apna Naam Daalo">
+            <button id="join-btn">Chat Mein Join Karo</button>
+        </div>
+
+        <div class="messages" id="messages">
+            <p>Sabse pehle apna naam daalke join karo!</p>
+        </div>
+
+        <div class="send-box">
+            <input type="text" id="message" placeholder="Message likho..." disabled>
+            <button id="send-btn" disabled>Bhejo</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
