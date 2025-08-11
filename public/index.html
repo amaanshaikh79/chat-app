@@ -1,28 +1,30 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Apna Chat App</title>
+    <meta charset="UTF-8">
+    <title>Apna Stylish Chat App 💬</title>
     <link rel="stylesheet" href="style.css">
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
     <div class="chat-box">
-        <h1>Doston Se Baat Karo! 💬</h1>
-        
+        <h1 class="title">💬 Apna Chat Room</h1>
+
         <div class="login-box">
             <input type="text" id="username" placeholder="Apna Naam Daalo">
-            <button id="join-btn">Chat Mein Join Karo</button>
+            <button id="join-btn">Join</button>
         </div>
 
         <div class="messages" id="messages">
-            <p>Sabse pehle apna naam daalke join karo!</p>
+            <p class="system-msg">⚡ Pehle apna naam daalo aur join karo!</p>
         </div>
 
         <div class="send-box">
             <input type="text" id="message" placeholder="Message likho..." disabled>
-            <button id="send-btn" disabled>Bhejo</button>
+            <button id="send-btn" disabled>📨</button>
         </div>
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
