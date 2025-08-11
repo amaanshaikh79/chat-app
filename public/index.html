@@ -1,30 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Apna Stylish Chat App 💬</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="/socket.io/socket.io.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Apna Chat App</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-    <div class="chat-box">
-        <h1 class="title">💬 Apna Chat Room</h1>
+  <div class="chat-wrapper">
+    <header class="topbar">
+      <h1>💬 Doston Se Baat Karo</h1>
+    </header>
 
-        <div class="login-box">
-            <input type="text" id="username" placeholder="Apna Naam Daalo">
-            <button id="join-btn">Join</button>
-        </div>
+    <main class="chat-card">
+      <div class="login-area">
+        <input id="username" type="text" placeholder="Apna Naam Daalo" />
+        <button id="join-btn">Join</button>
+      </div>
 
-        <div class="messages" id="messages">
-            <p class="system-msg">⚡ Pehle apna naam daalo aur join karo!</p>
-        </div>
+      <div id="messages" class="messages" aria-live="polite">
+        <div class="message system">⚡ Pehle apna naam daalo aur join karo!</div>
+      </div>
 
-        <div class="send-box">
-            <input type="text" id="message" placeholder="Message likho..." disabled>
-            <button id="send-btn" disabled>📨</button>
-        </div>
-    </div>
+      <form id="send-form" class="send-area" autocomplete="off">
+        <input id="message" type="text" placeholder="Message likho..." disabled />
+        <button id="send-btn" type="submit" disabled>Send</button>
+      </form>
+    </main>
+  </div>
 
-    <script src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
