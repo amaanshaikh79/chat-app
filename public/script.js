@@ -1,113 +1,76 @@
-/*  Replace your existing script.js with this.
-    Assumptions about server events (standard, but check your server):
-      - client emits: 'join', 'chat message', 'typing', 'stop typing'
-      - server emits: 'message' (for broadcasted messages), 'user joined', 'user left', 'typing', 'stop typing', 'user list'
-    If your server uses other event names, tell me and I'll adapt.
-*/
-
 (() => {
   const socket = (typeof io === 'function') ? io() : null;
 
-  // DOM refs
+  // DOM
   const usernameInput = document.getElementById('username');
   const joinBtn = document.getElementById('join-btn');
   const messagesEl = document.getElementById('messages');
   const messageInput = document.getElementById('message');
   const sendForm = document.getElementById('send-form');
   const sendBtn = document.getElementById('send-btn');
+  const typingEl = document.getElementById('typing-indicator');
+  const usersListEl = document.getElementById('users-list');
 
-  // Create extra UI: typing indicator, users panel
-  const typingIndicator = document.createElement('div');
-  typingIndicator.className = 'typing-indicator';
-  typingIndicator.setAttribute('aria-hidden', 'true');
-  typingIndicator.textContent = ''; // will be updated
-  messagesEl.parentNode.insertBefore(typingIndicator, messagesEl.nextSibling);
-
-  const usersPanel = document.createElement('aside');
-  usersPanel.className = 'users-panel';
-  usersPanel.innerHTML = `<h3>Active Users</h3><ul class="users-list" aria-live="polite"></ul>`;
-  document.querySelector('.chat-card').insertBefore(usersPanel, document.querySelector('.chat-card').firstChild);
-
-  const usersListEl = usersPanel.querySelector('.users-list');
-
-  // State
+  // state
   let username = localStorage.getItem('apnaChat_username') || '';
   let typing = false;
   let lastTypingTime = 0;
-  const TYPING_TIMER_LENGTH = 700; // ms
+  const TYPING_TIMER_LENGTH = 700;
+  let activeTypers = new Set();
   let isWindowFocused = true;
 
-  // small sound on incoming messages
+  // lightweight sound
   const msgSound = (() => {
     try {
-      const audio = new Audio();
-      // simple beep using data URI to avoid external files
-      audio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
-      audio.volume = 0.25;
-      return audio;
-    } catch (e) {
-      return null;
-    }
+      const a = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=");
+      a.volume = 0.25;
+      return a;
+    } catch (e) { return null; }
   })();
 
-  // Attach saved username to input
   if (username) {
     usernameInput.value = username;
-    enableChatAfterJoinUI();
+    enableChatUI();
   }
 
-  // Utils
+  // helper
   function formatTime(ts = Date.now()) {
     const d = new Date(ts);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
     return `${hh}:${mm}`;
   }
 
-  function createSystemMessage(text) {
+  function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+  function createSystem(text){
     const el = document.createElement('div');
     el.className = 'message system';
-    el.innerHTML = `<span class="sys-text">${escapeHtml(text)}</span><span class="time">${formatTime()}</span>`;
+    el.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
     messagesEl.appendChild(el);
-    smartScroll();
+    scrollSmart();
   }
 
   function appendMessage({id, user, text, time, self=false, status='delivered'}) {
     const el = document.createElement('div');
     el.className = `message ${self ? 'self' : 'other'}`;
     el.dataset.msgId = id || '';
-    const who = escapeHtml(user || 'Unknown');
-    const body = escapeHtml(text || '');
-    const tm = formatTime(time || Date.now());
     el.innerHTML = `
-      <div class="meta">
-        <strong class="user">${who}</strong>
-        <span class="time">${tm}</span>
-      </div>
-      <div class="bubble">${body}</div>
+      <div class="meta"><span class="user">${escapeHtml(user)}</span><span class="time">${formatTime(time)}</span></div>
+      <div class="bubble">${escapeHtml(text)}</div>
       <div class="status">${status === 'sending' ? 'Sending…' : (status === 'delivered' ? '✓' : '')}</div>
     `;
     messagesEl.appendChild(el);
-    smartScroll();
+    scrollSmart();
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
-  }
-
-  function smartScroll() {
-    // if user is near bottom -> scroll to bottom
-    const threshold = 100;
+  function scrollSmart(){
+    const threshold = 120;
     const nearBottom = (messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight) < threshold;
-    if (nearBottom) {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
+    if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function enableChatAfterJoinUI() {
+  function enableChatUI(){
     messageInput.removeAttribute('disabled');
     sendBtn.removeAttribute('disabled');
     usernameInput.setAttribute('disabled','true');
@@ -115,201 +78,163 @@
     messageInput.focus();
   }
 
-  // Typing handlers (debounced)
-  function updateTyping() {
+  // typing
+  function updateTyping(){
     if (!socket || !socket.connected) return;
-    if (!typing) {
+    if (!typing){
       typing = true;
       socket.emit('typing', { user: username });
     }
     lastTypingTime = Date.now();
-
     setTimeout(() => {
-      const timeDiff = Date.now() - lastTypingTime;
-      if (timeDiff >= TYPING_TIMER_LENGTH && typing) {
-        socket.emit('stop typing', { user: username });
+      const diff = Date.now() - lastTypingTime;
+      if (diff >= TYPING_TIMER_LENGTH && typing){
         typing = false;
+        socket.emit('stop typing', { user: username });
       }
     }, TYPING_TIMER_LENGTH + 50);
   }
 
-  // Desktop notification
-  function showDesktopNotification(title, body) {
+  // desktop notifications
+  function showNotification(title, body){
     if (!("Notification" in window)) return;
-    if (Notification.permission === "granted") {
-      new Notification(title, { body });
-    } else if (Notification.permission !== "denied") {
-      Notification.requestPermission().then(permission => {
-        if (permission === "granted") new Notification(title, { body });
-      });
+    if (Notification.permission === "granted") new Notification(title, { body });
+    else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then(p => { if (p === "granted") new Notification(title, { body }); });
     }
   }
 
-  // Event listeners
+  // events
   joinBtn.addEventListener('click', () => {
     const val = usernameInput.value.trim();
-    if (!val) {
-      usernameInput.focus();
-      return;
-    }
+    if (!val) { usernameInput.focus(); return; }
     username = val;
     localStorage.setItem('apnaChat_username', username);
-    if (socket) {
-      socket.emit('join', { user: username });
-    }
-    createSystemMessage(`Tumne join kar liya — ${username}`);
-    enableChatAfterJoinUI();
+    if (socket) socket.emit('join', { user: username });
+    createSystem(`Tumne join kar liya — ${username}`);
+    enableChatUI();
   });
+  usernameInput.addEventListener('keydown', e => { if (e.key === 'Enter') joinBtn.click(); });
 
-  usernameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') joinBtn.click();
-  });
-
-  messageInput.addEventListener('input', () => {
-    updateTyping();
-  });
+  messageInput.addEventListener('input', () => updateTyping());
 
   sendForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = messageInput.value.trim();
     if (!text) return;
-    const tempId = 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
-    // optimistic append
-    appendMessage({ id: tempId, user: username, text, time: Date.now(), self: true, status: 'sending' });
+    const tmpId = 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2,7);
+    appendMessage({ id: tmpId, user: username, text, time: Date.now(), self: true, status: 'sending' });
     messageInput.value = '';
-    socket && socket.emit('chat message', { id: tempId, user: username, text, time: Date.now() });
-    // stop typing immediately
-    if (typing) {
-      typing = false;
-      socket && socket.emit('stop typing', { user: username });
-    }
+    if (typing){ typing = false; socket && socket.emit('stop typing', { user: username }); }
+    socket && socket.emit('chat message', { id: tmpId, user: username, text, time: Date.now() });
   });
 
-  // focus tracking for notifications
   window.addEventListener('focus', () => isWindowFocused = true);
   window.addEventListener('blur', () => isWindowFocused = false);
 
-  // If socket not available, show offline notice
-  if (!socket) {
-    createSystemMessage('Socket.io client not found. Real-time features disabled.');
+  // socket handling
+  if (!socket){
+    createSystem('Socket.io client nahi mila — realtime features disabled.');
   } else {
     socket.on('connect', () => {
-      createSystemMessage('Server se connected.');
-      // re-join if we had a name
-      if (username) {
-        socket.emit('join', { user: username });
-      }
+      createSystem('Server se connected.');
+      if (username) socket.emit('join', { user: username });
     });
 
-    socket.on('disconnect', () => {
-      createSystemMessage('Server se disconnected. Reconnecting...');
-    });
+    socket.on('disconnect', () => createSystem('Server se disconnect ho gaya. Reconnecting...'));
 
-    // incoming message from server
+    // server emits full message (we used io.emit so sender also receives it)
     socket.on('message', (data) => {
-      // data expected: { id, user, text, time }
+      // try to find optimistic message
+      const existing = messagesEl.querySelector(`.message[data-msg-id="${data.id}"]`);
+      if (existing) {
+        existing.classList.remove('self');
+        const st = existing.querySelector('.status');
+        if (st) st.textContent = '✓';
+        const t = existing.querySelector('.time');
+        if (t) t.textContent = formatTime(data.time || Date.now());
+        return;
+      }
       const fromMe = data.user === username;
-      // find optimistic message by tmp id and mark delivered
-      if (data.id) {
-        const match = messagesEl.querySelector(`.message[data-msg-id="${data.id}"]`);
-        if (match) {
-          match.classList.remove('self', 'sending');
-          match.querySelector('.status').textContent = '✓';
-          // update time if necessary
-          const tspan = match.querySelector('.time');
-          if (tspan) tspan.textContent = formatTime(data.time || Date.now());
-          return; // optimistic update done
-        }
-      }
       appendMessage({ id: data.id, user: data.user, text: data.text, time: data.time, self: fromMe, status: 'delivered' });
-
-      // show sound/notification only if from others
-      if (!fromMe) {
-        if (!isWindowFocused) showDesktopNotification(`${data.user}`, data.text.slice(0, 100));
-        if (msgSound) try { msgSound.play().catch(()=>{}); } catch(e){}
+      if (!fromMe){
+        if (!isWindowFocused) showNotification(`${data.user}`, data.text.slice(0,100));
+        if (msgSound) try{ msgSound.play().catch(()=>{}); } catch(e){}
       }
     });
 
-    // typing events
-    // payload: { user }
-    const activeTypers = new Set();
-    socket.on('typing', (payload) => {
-      if (!payload || !payload.user) return;
-      if (payload.user === username) return;
-      activeTypers.add(payload.user);
-      renderTypingIndicator();
-    });
-    socket.on('stop typing', (payload) => {
-      if (!payload || !payload.user) return;
-      activeTypers.delete(payload.user);
-      renderTypingIndicator();
-    });
-
-    function renderTypingIndicator() {
-      if (activeTypers.size === 0) {
-        typingIndicator.textContent = '';
-        typingIndicator.setAttribute('aria-hidden','true');
-      } else {
-        const names = Array.from(activeTypers).slice(0,3);
-        const text = names.join(', ') + (activeTypers.size > 3 ? ' aur others...' : '') + ' type kar rahe hain...';
-        typingIndicator.textContent = text;
-        typingIndicator.setAttribute('aria-hidden','false');
-      }
-    }
-
-    // user join/leave
-    socket.on('user joined', (payload) => {
-      const user = payload && payload.user ? payload.user : 'Koi';
-      createSystemMessage(`${user} joined the chat.`);
-      // show desktop notification if background
-      if (!isWindowFocused) showDesktopNotification('Join', `${user} joined the chat.`);
-    });
-
-    socket.on('user left', (payload) => {
-      const user = payload && payload.user ? payload.user : 'Koi';
-      createSystemMessage(`${user} left the chat.`);
-    });
-
-    // user list update
-    // server may emit 'user list' with array of names
-    socket.on('user list', (payload) => {
-      // payload expected: { users: ['a', 'b', ...] } or array directly
-      const arr = Array.isArray(payload) ? payload : (payload && payload.users ? payload.users : []);
-      usersListEl.innerHTML = '';
-      arr.forEach(u => {
-        const li = document.createElement('li');
-        li.textContent = u;
-        if (u === username) li.className = 'you';
-        usersListEl.appendChild(li);
-      });
-    });
-
-    // fallback server broadcasts
-    // some servers might emit 'chat message' directly
-    socket.on('chat message', (d) => {
-      // handle similar to 'message'
-      socket.emit && socket.emit('noop'); // no-op if needed
-      // reuse 'message' handler logic: convert and call append
-      appendMessage({ id: d.id, user: d.user, text: d.text, time: d.time, self: d.user === username, status: 'delivered' });
-    });
-
-    // server may acknowledge message delivered via 'message delivered'
     socket.on('message delivered', (payload) => {
-      // payload expected: { id }
-      if (payload && payload.id) {
+      if (payload && payload.id){
         const el = messagesEl.querySelector(`.message[data-msg-id="${payload.id}"]`);
         if (el) el.querySelector('.status').textContent = '✓';
       }
     });
 
-  } // end if socket exists
+    // typing
+    socket.on('typing', (payload) => {
+      if (!payload || !payload.user) return;
+      if (payload.user === username) return;
+      activeTypers.add(payload.user);
+      renderTyping();
+    });
+    socket.on('stop typing', (payload) => {
+      if (!payload || !payload.user) return;
+      activeTypers.delete(payload.user);
+      renderTyping();
+    });
 
-  // initial system hint
-  (function initialHint(){
-    const sys = messagesEl.querySelector('.message.system');
-    if (!sys) {
-      createSystemMessage('⚡ Pehle apna naam daalo aur join karo!');
+    function renderTyping(){
+      if (activeTypers.size === 0){
+        typingEl.textContent = '';
+        typingEl.setAttribute('aria-hidden','true');
+      } else {
+        const arr = Array.from(activeTypers).slice(0,3);
+        typingEl.textContent = arr.join(', ') + (activeTypers.size > 3 ? ' aur others...' : '') + ' type kar rahe hain...';
+        typingEl.setAttribute('aria-hidden','false');
+      }
     }
-  })();
+
+    // user join/left
+    socket.on('user joined', (payload) => {
+      const u = payload && payload.user ? payload.user : 'Koi';
+      createSystem(`${u} joined the chat.`);
+      if (!isWindowFocused) showNotification('Join', `${u} joined`);
+    });
+
+    socket.on('user left', (payload) => {
+      const u = payload && payload.user ? payload.user : 'Koi';
+      createSystem(`${u} left the chat.`);
+    });
+
+    // user list
+    socket.on('user list', (arr) => {
+      const users = Array.isArray(arr) ? arr : (arr && arr.users ? arr.users : []);
+      usersListEl.innerHTML = '';
+      users.forEach(u => {
+        const li = document.createElement('li');
+        li.textContent = u;
+        if (u === username) li.classList.add('you');
+        usersListEl.appendChild(li);
+      });
+    });
+
+    // forced logout (duplicate login)
+    socket.on('force logout', (payload) => {
+      createSystem('Aapka session kisi naye login ne replace kar diya — aap disconnect ho gaye.');
+      // disable UI
+      usernameInput.removeAttribute('disabled');
+      joinBtn.removeAttribute('disabled');
+      messageInput.setAttribute('disabled','true');
+      sendBtn.setAttribute('disabled','true');
+      localStorage.removeItem('apnaChat_username');
+      // attempt to disconnect socket
+      try { socket.disconnect(); } catch(e){}
+    });
+
+    socket.on('join error', (payload) => {
+      createSystem('Join error: ' + (payload && payload.message ? payload.message : 'Unknown'));
+    });
+
+  } // socket exists end
 
 })();

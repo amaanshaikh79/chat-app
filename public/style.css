@@ -1,121 +1,142 @@
-/* Replace your style.css with this (or merge carefully).
-   I kept styles simple + modern and made sure new UI elements look good.
-*/
-
 :root{
-  --bg:#0f1724;
+  --bg:#071226;
   --card:#0b1220;
   --muted:#98a1b2;
   --accent:#5eead4;
   --accent-2:#60a5fa;
-  --danger:#fb7185;
   --glass: rgba(255,255,255,0.03);
+  --text:#e6eef8;
+  --max-width:980px;
 }
 
 *{box-sizing:border-box}
+html,body{height:100%}
 body{
   margin:0;
   font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  background: linear-gradient(180deg,#071226 0%, #0b1020 100%);
-  color: #e6eef8;
+  background: linear-gradient(180deg,var(--bg) 0%, #0b1020 100%);
+  color:var(--text);
   display:flex;
-  min-height:100vh;
   align-items:center;
   justify-content:center;
-  padding:20px;
+  padding:18px;
+  -webkit-font-smoothing:antialiased;
 }
 
-.chat-wrapper{width:100%;max-width:920px}
-.topbar{
-  text-align:center;
-  background:transparent;
-  padding:12px 0;
-  margin-bottom:12px;
+/* bubble background (animated, subtle) */
+.bg-bubbles {
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  overflow:hidden;
+  z-index:0;
+  opacity:0.12;
 }
-.topbar h1{margin:0;font-size:1.25rem;letter-spacing:0.2px}
+.bg-bubbles .bubble{
+  position:absolute;
+  border-radius:50%;
+  background: radial-gradient(circle at 30% 30%, rgba(96,165,250,0.35), rgba(94,234,212,0.12));
+  filter: blur(12px);
+  mix-blend-mode: screen;
+  animation: rise 18s linear infinite;
+  transform-origin:center;
+}
+.b1{width:260px;height:260px;left:-40px;bottom:-60px;animation-duration:28s;animation-delay:0s}
+.b2{width:160px;height:160px;left:60%;bottom:-80px;animation-duration:22s;animation-delay:3s}
+.b3{width:120px;height:120px;left:20%;bottom:-90px;animation-duration:20s;animation-delay:6s}
+.b4{width:220px;height:220px;left:75%;bottom:-30px;animation-duration:30s;animation-delay:2s}
+.b5{width:90px;height:90px;left:40%;bottom:-60px;animation-duration:16s;animation-delay:5s}
+.b6{width:140px;height:140px;left:85%;bottom:-120px;animation-duration:24s;animation-delay:1s}
+.b7{width:70px;height:70px;left:10%;bottom:-140px;animation-duration:18s;animation-delay:8s}
+.b8{width:200px;height:200px;left:50%;bottom:-200px;animation-duration:34s;animation-delay:4s}
 
+@keyframes rise {
+  0% { transform: translateY(0) scale(0.9); opacity:0.6; }
+  50%{ opacity:0.35; }
+  100%{ transform: translateY(-140vh) scale(1.15); opacity:0; }
+}
+
+/* main layout */
+.chat-wrapper{width:100%;max-width:var(--max-width);z-index:1}
+.topbar{ text-align:center;margin-bottom:14px }
+.topbar h1{margin:0;font-size:1.25rem;letter-spacing:0.4px}
+
+/* container */
 .chat-card{
+  display:grid;
+  grid-template-columns: 1fr 280px;
+  gap:14px;
   background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
   border-radius:12px;
-  box-shadow: 0 10px 30px rgba(2,6,23,0.6);
-  display:grid;
-  grid-template-columns: 1fr 260px;
-  gap:12px;
   padding:14px;
+  box-shadow: 0 20px 50px rgba(2,6,23,0.55);
+  min-height:520px;
+  overflow:hidden;
 }
 
-/* main column (left) */
-.chat-card > main, .chat-card > .main-area { grid-column:1 / 2; }
-.login-area{display:flex;gap:8px;align-items:center;margin-bottom:10px}
-.login-area input[type="text"]{
-  flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);
-  background:transparent;color:inherit;outline:none;
+/* left column */
+.left-col{display:flex;flex-direction:column;gap:10px}
+.login-area{display:flex;gap:8px;align-items:center}
+.login-area input{
+  flex:1;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);
+  background:transparent;color:inherit;outline:none;font-size:0.98rem;
 }
-.login-area button{padding:10px 14px;border-radius:8px;border:none;background:var(--accent-2);color:#062;cursor:pointer}
+.login-area button{
+  padding:10px 14px;border-radius:10px;border:none;background:var(--accent-2);color:#042;cursor:pointer;font-weight:600;
+}
 
+/* messages */
 .messages{
-  height:440px;
-  overflow:auto;
-  padding:12px;
-  border-radius:10px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
-  border:1px solid rgba(255,255,255,0.03);
+  flex:1;overflow:auto;padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));border:1px solid rgba(255,255,255,0.03);
+  scroll-behavior:smooth;
 }
 
-/* message */
-.message{margin-bottom:12px;max-width:82%;}
-.message.system{background:transparent;color:var(--muted);font-size:0.9rem;text-align:center;padding:6px;border-radius:8px}
-.message .meta{display:flex;gap:8px;align-items:center;margin-bottom:6px}
-.message .user{font-size:0.92rem}
-.message .time{font-size:0.8rem;color:var(--muted);margin-left:auto}
-.message .bubble{
-  padding:10px 12px;border-radius:10px;background:var(--glass);
-  border:1px solid rgba(255,255,255,0.02);
-  box-shadow: 0 4px 10px rgba(2,6,23,0.4);
-  word-break:break-word;
-}
+/* message styles */
+.message{margin-bottom:12px;max-width:82%}
+.message.system{color:var(--muted);text-align:center;padding:6px;border-radius:8px}
+.message .meta{display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:0.88rem}
+.message .user{font-weight:600}
+.message .time{margin-left:auto;font-size:0.78rem;color:var(--muted)}
+.message .bubble{padding:10px 12px;border-radius:10px;background:var(--glass);border:1px solid rgba(255,255,255,0.02);word-break:break-word;box-shadow:0 8px 20px rgba(2,6,23,0.45)}
 
-/* self vs other */
 .message.self{margin-left:auto;text-align:right}
 .message.self .bubble{background:linear-gradient(180deg, rgba(96,165,250,0.12), rgba(96,165,250,0.06));border-color:rgba(96,165,250,0.18)}
 .message.other .bubble{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))}
 
-.send-area{display:flex;gap:8px;margin-top:12px}
-.send-area input[type="text"]{
-  flex:1;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);
-  background:transparent;color:inherit;outline:none;
-}
-.send-area button{padding:12px 16px;border-radius:10px;border:none;background:var(--accent);color:#022;cursor:pointer}
-
-/* status small */
-.message .status{font-size:0.75rem;color:var(--muted);margin-top:6px}
+/* small status under bubble */
+.message .status{display:block;font-size:0.72rem;color:var(--muted);margin-top:6px}
 
 /* typing indicator */
-.typing-indicator{
-  margin-top:8px;
-  color:var(--muted);
-  font-size:0.9rem;
-  min-height:24px;
-}
+.typing-indicator{font-size:0.92rem;color:var(--muted);min-height:22px;padding-left:4px}
 
-/* users panel (right column) */
-.users-panel{
-  grid-column:2 / 3;
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
-  border-radius:10px;padding:12px;border:1px solid rgba(255,255,255,0.03);
-  display:flex;flex-direction:column;gap:8px;
-  min-height:160px;
+/* send area sticky bottom style inside left column */
+.send-area{display:flex;gap:8px;margin-top:6px}
+.send-area input{
+  flex:1;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;outline:none;font-size:1rem;
 }
+.send-area button{padding:12px 16px;border-radius:12px;border:none;background:var(--accent);color:#022;cursor:pointer;font-weight:700}
+
+/* users panel (right) */
+.users-panel{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));border-radius:10px;padding:12px;border:1px solid rgba(255,255,255,0.03);display:flex;flex-direction:column;gap:8px;min-height:160px}
 .users-panel h3{margin:0;font-size:1rem;color:var(--accent-2)}
-.users-list{list-style:none;padding:8px 0;margin:0;overflow:auto;max-height:300px}
-.users-list li{padding:8px;border-radius:8px;margin-bottom:6px;background:transparent;border:1px solid rgba(255,255,255,0.02)}
+.users-list{list-style:none;padding:8px 0;margin:0;overflow:auto;max-height:420px}
+.users-list li{padding:8px;border-radius:8px;margin-bottom:6px;background:transparent;border:1px solid rgba(255,255,255,0.02);font-size:0.95rem}
 .users-list li.you{font-weight:700;border-color:rgba(94,234,212,0.12);background:linear-gradient(90deg, rgba(94,234,212,0.02), rgba(96,165,250,0.02))}
 
 /* responsive */
-@media (max-width:860px){
-  .chat-card{grid-template-columns:1fr; padding:12px;}
-  .users-panel{order:3}
+@media (max-width:900px){
+  .chat-card{grid-template-columns:1fr;padding:12px;min-height:unset}
+  .users-panel{order:3;max-height:180px}
+  .messages{height:58vh;min-height:320px}
+  .login-area input{font-size:1rem}
+  .send-area input{padding:14px;font-size:1rem}
+  .send-area button{padding:14px;font-size:1rem}
 }
 
-/* accessibility small improvements */
-.messages:focus { outline: 2px solid rgba(96,165,250,0.12); }
+/* mega small screens fixes */
+@media (max-width:420px){
+  body{padding:10px}
+  .topbar h1{font-size:1.05rem}
+  .messages{height:52vh}
+  .users-list li{font-size:0.9rem;padding:7px}
+}
