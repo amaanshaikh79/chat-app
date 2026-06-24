@@ -29,8 +29,8 @@ const io = socketIO(server, {
   }
 });
 
-// Connect to MongoDB
-connectDB();
+// Note: connectDB() is called inside server.listen() at the bottom
+// so Render detects the port before DB connection starts
 
 // Middleware
 app.use(cors());
@@ -653,8 +653,18 @@ io.on('connection', async (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`🚀 Server chal raha hai: http://localhost:${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: Date.now() });
 });
+
+// START SERVER FIRST (so Render detects the port), THEN connect to DB
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server chal raha hai on port: ${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Connect to MongoDB AFTER server is listening
+  connectDB();
+});
+

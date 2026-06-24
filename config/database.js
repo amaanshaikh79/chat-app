@@ -7,12 +7,12 @@ const connectDB = async () => {
       console.error('❌ MONGODB_URI is not defined in environment variables!');
       console.error('📝 Please set MONGODB_URI in your .env file or deployment platform.');
       console.error('   Example: MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/chatapp');
-      process.exit(1);
+      return; // Don't exit — let the server keep running
     }
 
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      // These options are now defaults in Mongoose 6+
-      // but included for clarity
+      serverSelectionTimeoutMS: 10000, // 10 second timeout
+      socketTimeoutMS: 45000,
     });
 
     console.log(`✅ MongoDB connected: ${conn.connection.host}`);
@@ -23,7 +23,11 @@ const connectDB = async () => {
     });
 
     mongoose.connection.on('disconnected', () => {
-      console.log('⚠️  MongoDB disconnected');
+      console.log('⚠️  MongoDB disconnected. Attempting to reconnect...');
+    });
+
+    mongoose.connection.on('reconnected', () => {
+      console.log('✅ MongoDB reconnected!');
     });
 
     // Graceful shutdown
@@ -34,9 +38,10 @@ const connectDB = async () => {
     });
 
   } catch (error) {
-    console.error('❌ MongoDB connection failed:', error);
+    console.error('❌ MongoDB connection failed:', error.message);
     console.error('💡 Check your MONGODB_URI connection string');
-    process.exit(1);
+    console.error('⚠️  Server will keep running but DB features won\'t work');
+    // Don't call process.exit(1) — let the server stay alive for Render
   }
 };
 
