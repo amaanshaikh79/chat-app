@@ -55,37 +55,23 @@ function getUserSocket(userId) {
   return socketId ? io.sockets.sockets.get(socketId) : null;
 }
 
-// Helper: Emit to user's friends only
-async function emitToFriends(userId, event, data) {
+// Helper: Emit an event to every participant of a conversation via their
+// personal room (each socket joins a room named by its user id on connect).
+// Delivering to personal rooms instead of the conversation room guarantees
+// participants receive the event even for conversations created after they
+// connected. Pass excludeUserId to skip a user (for example, the originator).
+async function emitToParticipants(conversationId, event, data, excludeUserId = null) {
   try {
-    const user = await User.findById(userId).select('friends');
-    if (!user) return;
-
-    user.friends.forEach(friendId => {
-      const socket = getUserSocket(friendId);
-      if (socket) {
-        socket.emit(event, data);
-      }
-    });
-  } catch (error) {
-    console.error('Error emitting to friends:', error);
-  }
-}
-
-// Helper: Emit to conversation participants
-async function emitToConversation(conversationId, event, data, excludeSocketId = null) {
-  try {
-    const conversation = await Conversation.findById(conversationId);
+    const conversation = await Conversation.findById(conversationId).select('participants');
     if (!conversation) return;
 
-    conversation.participants.forEach(participantId => {
-      const socket = getUserSocket(participantId);
-      if (socket && socket.id !== excludeSocketId) {
-        socket.emit(event, data);
-      }
+    conversation.participants.forEach((participantId) => {
+      const id = participantId.toString();
+      if (excludeUserId && id === excludeUserId.toString()) return;
+      io.to(id).emit(event, data);
     });
   } catch (error) {
-    console.error('Error emitting to conversation:', error);
+    console.error(`Error emitting "${event}" to participants:`, error);
   }
 }
 
@@ -132,15 +118,23 @@ io.on('connection', async (socket) => {
   userSockets.set(userId, socket.id);
   socketUsers.set(socket.id, userId);
 
+  // Join a personal room keyed by the user id so the server can reliably
+  // deliver events to this user regardless of conversation-room membership.
+  socket.join(userId);
+
   // Update user status to online
   await User.findByIdAndUpdate(userId, {
     status: 'online',
     lastSeen: Date.now()
   });
 
-  // Notify friends (not everyone) about online status
-  emitToFriends(userId, 'user status', {
+  // Broadcast online status to everyone, including identity so any client can
+  // render presence without an extra lookup.
+  socket.broadcast.emit('user status', {
     userId,
+    username: socket.user.username,
+    avatar: socket.user.avatar,
+    profilePicture: socket.user.profilePicture,
     status: 'online',
     lastSeen: Date.now()
   });
@@ -292,8 +286,9 @@ io.on('connection', async (socket) => {
       // Populate sender
       await message.populate('sender', 'username email avatar');
 
-      // Emit to all participants in conversation
-      io.to(conversationId).emit('message', {
+      // Deliver to every participant's personal room so it reaches them even
+      // if their socket has not joined this conversation's room yet.
+      await emitToParticipants(conversationId, 'message', {
         ...message.toObject(),
         tempId
       });
@@ -335,8 +330,8 @@ io.on('connection', async (socket) => {
 
       await message.populate('sender', 'username email avatar');
 
-      // Emit to conversation
-      io.to(message.conversationId.toString()).emit('message edited', message);
+      // Deliver to every participant's personal room.
+      await emitToParticipants(message.conversationId, 'message edited', message);
 
       callback({ success: true, message });
     } catch (error) {
@@ -364,8 +359,8 @@ io.on('connection', async (socket) => {
       message.deletedAt = Date.now();
       await message.save();
 
-      // Emit to conversation
-      io.to(message.conversationId.toString()).emit('message deleted', {
+      // Deliver to every participant's personal room.
+      await emitToParticipants(message.conversationId, 'message deleted', {
         messageId,
         conversationId: message.conversationId
       });
@@ -382,11 +377,11 @@ io.on('connection', async (socket) => {
   socket.on('typing', async (data) => {
     try {
       const { conversationId } = data;
-      socket.to(conversationId).emit('typing', {
+      await emitToParticipants(conversationId, 'typing', {
         userId,
         username: socket.user.username,
         conversationId
-      });
+      }, userId);
     } catch (error) {
       console.error('Typing error:', error);
     }
@@ -395,10 +390,10 @@ io.on('connection', async (socket) => {
   socket.on('stop typing', async (data) => {
     try {
       const { conversationId } = data;
-      socket.to(conversationId).emit('stop typing', {
+      await emitToParticipants(conversationId, 'stop typing', {
         userId,
         conversationId
-      });
+      }, userId);
     } catch (error) {
       console.error('Stop typing error:', error);
     }
@@ -538,8 +533,8 @@ io.on('connection', async (socket) => {
       await message.addReaction(userId, emoji);
       await message.populate('reactions.user', 'username');
 
-      // Emit to conversation
-      io.to(message.conversationId.toString()).emit('message reaction', {
+      // Deliver to every participant's personal room.
+      await emitToParticipants(message.conversationId, 'message reaction', {
         messageId,
         reactions: message.reactions
       });
@@ -562,8 +557,8 @@ io.on('connection', async (socket) => {
 
       await message.removeReaction(userId);
 
-      // Emit to conversation
-      io.to(message.conversationId.toString()).emit('message reaction', {
+      // Deliver to every participant's personal room.
+      await emitToParticipants(message.conversationId, 'message reaction', {
         messageId,
         reactions: message.reactions
       });
@@ -619,12 +614,12 @@ io.on('connection', async (socket) => {
         }
       );
 
-      // Notify others in conversation
-      socket.to(conversationId).emit('messages read', {
+      // Notify other participants via their personal rooms.
+      await emitToParticipants(conversationId, 'messages read', {
         conversationId,
         userId,
         readAt: Date.now()
-      });
+      }, userId);
     } catch (error) {
       console.error('Mark as read error:', error);
     }
@@ -644,9 +639,12 @@ io.on('connection', async (socket) => {
       lastSeen: Date.now()
     });
 
-    // Notify friends only (not everyone)
-    emitToFriends(userId, 'user status', {
+    // Broadcast offline status to everyone.
+    socket.broadcast.emit('user status', {
       userId,
+      username: socket.user.username,
+      avatar: socket.user.avatar,
+      profilePicture: socket.user.profilePicture,
       status: 'offline',
       lastSeen: Date.now()
     });
@@ -661,7 +659,7 @@ app.get('/health', (req, res) => {
 // START SERVER FIRST (so Render detects the port), THEN connect to DB
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server chal raha hai on port: ${PORT}`);
+  console.log(`🚀 Server running on port: ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   
   // Connect to MongoDB AFTER server is listening

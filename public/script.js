@@ -70,6 +70,7 @@
   let friends = new Map();
   let friendRequests = { incoming: [], outgoing: [] };
   let onlineUsers = new Set();
+  let onlinePresence = new Set(); // ids of users currently online (live presence)
   let typing = false;
   let lastTypingTime = 0;
   let activeTypers = new Set();
@@ -96,10 +97,29 @@
   // Apply saved theme
   applyTheme(settings.theme);
   
-  // Mobile detection
+  // Mobile detection: when crossing the breakpoint, re-sync which pane is shown.
   window.addEventListener('resize', () => {
+    const wasMobile = isMobile;
     isMobile = window.innerWidth <= 768;
+    if (wasMobile !== isMobile) syncMobileLayout();
   });
+
+  // On mobile the sidebar and chat pane are mutually exclusive and toggled with
+  // the .mobile-active class; without this the page would be blank on load.
+  // On desktop both panes are shown by the grid, so the classes are cleared.
+  function syncMobileLayout() {
+    if (isMobile) {
+      if (currentMobileView === 'chat') {
+        showChatMobile();
+      } else {
+        showSidebarMobile();
+      }
+    } else {
+      sidebar.classList.remove('mobile-active');
+      chatMain.classList.remove('mobile-active');
+      mobileBackBtn.classList.remove('visible');
+    }
+  }
 
   // ========== AUTH FUNCTIONS ==========
   async function verifyTokenAndConnect() {
@@ -133,6 +153,7 @@
     authScreen.style.display = 'none';
     chatScreen.style.display = 'block';
     currentUserEl.textContent = `👤 ${currentUser.username}`;
+    syncMobileLayout();
     loadInitialData();
   }
 
@@ -353,7 +374,8 @@
         };
         conversations.set(response.conversationId, currentConversation);
         displayMessages(response.messages);
-        updateOnlineCount(response.onlineUsers?.length || 0);
+        seedPresence(response.onlineUsers);
+        refreshGlobalOnlineCount();
       }
     });
   }
@@ -390,7 +412,9 @@
         data.friends.forEach(friend => {
           friends.set(friend._id, friend);
         });
+        seedPresence(data.friends);
         displayFriends(data.friends);
+        refreshGlobalOnlineCount();
       }
     } catch (error) {
       console.error('Load friends error:', error);
@@ -508,8 +532,9 @@
     convItem.className = 'conversation-item';
     convItem.dataset.convId = conv._id;
     convItem.dataset.convType = 'private';
+    convItem.dataset.userId = otherUser._id;
 
-    const isOnline = friends.get(otherUser._id)?.status === 'online';
+    const isOnline = onlinePresence.has(otherUser._id) || friends.get(otherUser._id)?.status === 'online';
     const avatarBg = otherUser.profilePicture || '#7C3AED';
     const initials = otherUser.username.substring(0, 2).toUpperCase();
 
@@ -600,7 +625,7 @@
       friendItem.className = 'friend-item';
       friendItem.dataset.userId = friend._id;
 
-      const isOnline = friend.status === 'online';
+      const isOnline = onlinePresence.has(friend._id) || friend.status === 'online';
       const avatarBg = friend.profilePicture || '#7C3AED';
       const initials = friend.username.substring(0, 2).toUpperCase();
 
@@ -707,9 +732,10 @@
   // ========== DISCOVER USERS ==========
   function displayDiscoverUsers(users) {
     discoverUsersList.innerHTML = '';
-    
+    seedPresence(users);
+
     // Filter out self and already friends
-    const filteredUsers = users.filter(u => 
+    const filteredUsers = users.filter(u =>
       u._id !== currentUser._id && !friends.has(u._id)
     );
     
@@ -727,15 +753,16 @@
 
       const avatarBg = user.profilePicture || '#7C3AED';
       const initials = user.username.substring(0, 2).toUpperCase();
-      
+      const isOnline = onlinePresence.has(user._id) || user.status === 'online';
+
       // Check if request already sent
       const requestSent = friendRequests.outgoing.some(r => r.recipient._id === user._id);
 
       userItem.innerHTML = `
-        <div class="avatar" style="background: ${avatarBg};">${initials}</div>
+        <div class="avatar ${isOnline ? 'online' : ''}" style="background: ${avatarBg};">${initials}</div>
         <div class="item-details">
           <div class="item-name">${escapeHtml(user.username)}</div>
-          <div class="item-preview">${user.status}</div>
+          <div class="item-preview">${isOnline ? 'Online' : 'Offline'}</div>
         </div>
         <button class="add-friend-btn ${requestSent ? 'pending' : ''}" 
                 onclick="sendFriendRequest('${user._id}')"
@@ -846,23 +873,33 @@
   }
 
   function handleNewMessage(data) {
-    const existing = messagesEl.querySelector(`[data-msg-id="${data._id}"]`);
-    if (existing) return;
+    // Reconcile the optimistic placeholder the sender saw before the server
+    // echoed the saved message back (keyed by tempId, not the real _id).
+    if (data.tempId) {
+      const optimistic = messagesEl.querySelector(`[data-msg-id="${data.tempId}"]`);
+      if (optimistic) optimistic.remove();
+    }
 
-    // Check if it's for current conversation
-    if (data.conversationId !== currentConversation?._id) {
-      // Update unread badge
+    // Never render the same message twice.
+    if (messagesEl.querySelector(`[data-msg-id="${data._id}"]`)) return;
+
+    // If the message belongs to another conversation, surface it without
+    // rendering it in the open thread.
+    if (!currentConversation || String(data.conversationId) !== String(currentConversation._id)) {
+      if (!conversations.has(data.conversationId)) {
+        // A message for a conversation we have not loaded yet (e.g. a brand new
+        // DM started by the other person) — refresh the list so it appears.
+        loadConversations();
+      }
       updateConversationUnread(data.conversationId);
       return;
     }
 
     appendMessage(data);
 
-    // Play sound for messages from others
+    // For messages from others, play a sound and mark the thread as read.
     if (data.sender._id !== currentUser._id) {
       playMessageSound();
-      
-      // Mark as read
       socket.emit('mark as read', { conversationId: data.conversationId });
     }
   }
@@ -1067,10 +1104,6 @@
     });
   }
 
-  socket.on('message reaction', (data) => {
-    handleMessageReaction(data);
-  });
-
   // Edit message
   function openEditModal(msgId, msgText) {
     editingMessageId = msgId;
@@ -1178,7 +1211,7 @@
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/users/profile`, {
+      const response = await fetch(`${API_BASE}/api/auth/profile`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1262,36 +1295,57 @@
   }
 
   function handleUserStatus(data) {
-    // Update friend status
-    const friend = friends.get(data.userId);
+    if (!data || !data.userId || data.userId === currentUser?._id) return;
+
+    const online = data.status === 'online';
+    if (online) onlinePresence.add(data.userId);
+    else onlinePresence.delete(data.userId);
+
+    applyPresence(data.userId, online, data.lastSeen);
+    refreshGlobalOnlineCount();
+  }
+
+  // Reflect a single user's presence everywhere it is shown: the Friends,
+  // Discover and Chats lists (all keyed by data-user-id) and the chat header.
+  function applyPresence(userId, online, lastSeen) {
+    const friend = friends.get(userId);
     if (friend) {
-      friend.status = data.status;
-      friend.lastSeen = data.lastSeen;
-      
-      // Update friend list UI
-      const friendItem = friendsList.querySelector(`[data-user-id="${data.userId}"]`);
-      if (friendItem) {
-        const avatar = friendItem.querySelector('.avatar');
-        const preview = friendItem.querySelector('.item-preview');
-        
-        if (data.status === 'online') {
-          avatar.classList.add('online');
-          preview.textContent = 'Online';
-        } else {
-          avatar.classList.remove('online');
-          preview.textContent = `Last seen ${formatLastSeen(data.lastSeen)}`;
-        }
-      }
-      
-      // Update chat header if viewing this friend
-      const otherUser = currentConversation?.participants?.find(p => p._id === data.userId);
-      if (otherUser) {
-        const isOnline = data.status === 'online';
-        chatSubtitleEl.textContent = isOnline ? 'Online' : `Last seen ${formatLastSeen(data.lastSeen)}`;
-        chatSubtitleEl.className = isOnline ? 'chat-subtitle online' : 'chat-subtitle';
-        chatAvatarEl.className = isOnline ? 'avatar online' : 'avatar';
-      }
+      friend.status = online ? 'online' : 'offline';
+      friend.lastSeen = lastSeen;
     }
+
+    const previewText = online ? 'Online' : `Last seen ${formatLastSeen(lastSeen)}`;
+
+    document.querySelectorAll(`[data-user-id="${userId}"]`).forEach((item) => {
+      const avatar = item.querySelector('.avatar');
+      if (avatar) avatar.classList.toggle('online', online);
+      const preview = item.querySelector('.item-preview');
+      if (preview) preview.textContent = previewText;
+    });
+
+    // Update the chat header when the open conversation is with this user.
+    const inThisChat = currentConversation?.participants?.some((p) => p._id === userId);
+    if (inThisChat) {
+      chatSubtitleEl.textContent = previewText;
+      chatSubtitleEl.className = online ? 'chat-subtitle online' : 'chat-subtitle';
+      chatAvatarEl.className = online ? 'avatar online' : 'avatar';
+    }
+  }
+
+  // The global room shows a live count of everyone currently online.
+  function refreshGlobalOnlineCount() {
+    if (currentConversation?.type === 'global') {
+      updateOnlineCount(onlinePresence.size + 1); // +1 for the current user
+    }
+  }
+
+  // Seed the presence set from any list of user records that carry a status.
+  function seedPresence(users) {
+    if (!Array.isArray(users)) return;
+    users.forEach((u) => {
+      if (!u || !u._id || u._id === currentUser?._id) return;
+      if (u.status === 'online') onlinePresence.add(u._id);
+    });
   }
 
   // ========== NOTIFICATIONS ==========
