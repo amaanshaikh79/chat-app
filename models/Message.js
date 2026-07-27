@@ -23,6 +23,11 @@ const messageSchema = new mongoose.Schema({
     enum: ['text', 'image', 'file', 'system'],
     default: 'text'
   },
+  replyTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message',
+    default: null
+  },
   status: {
     type: String,
     enum: ['sent', 'delivered', 'read'],

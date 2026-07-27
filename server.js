@@ -178,7 +178,15 @@ io.on('connection', async (socket) => {
         conversationId: globalConv._id,
         isDeleted: false
       })
-        .populate('sender', 'username email avatar')
+        .populate('sender', 'username email avatar profilePicture')
+        .populate({
+          path: 'replyTo',
+          select: 'text sender messageType',
+          populate: {
+            path: 'sender',
+            select: 'username'
+          }
+        })
         .sort({ createdAt: -1 })
         .limit(50);
 
@@ -231,7 +239,15 @@ io.on('connection', async (socket) => {
         conversationId: conversation._id,
         isDeleted: false
       })
-        .populate('sender', 'username email avatar')
+        .populate('sender', 'username email avatar profilePicture')
+        .populate({
+          path: 'replyTo',
+          select: 'text sender messageType',
+          populate: {
+            path: 'sender',
+            select: 'username'
+          }
+        })
         .sort({ createdAt: -1 })
         .limit(50);
 
@@ -254,7 +270,7 @@ io.on('connection', async (socket) => {
   // Send message
   socket.on('send message', async (data, callback) => {
     try {
-      const { conversationId, text, tempId } = data;
+      const { conversationId, text, tempId, replyTo } = data;
 
       if (!text || !text.trim()) {
         return callback({ success: false, message: 'Message text required' });
@@ -275,7 +291,8 @@ io.on('connection', async (socket) => {
         conversationId,
         sender: userId,
         text: text.trim(),
-        messageType: 'text'
+        messageType: 'text',
+        replyTo: replyTo || null
       });
 
       // Update conversation's last message
@@ -283,8 +300,18 @@ io.on('connection', async (socket) => {
       conversation.lastMessageAt = message.createdAt;
       await conversation.save();
 
-      // Populate sender
-      await message.populate('sender', 'username email avatar');
+      // Populate sender and replyTo
+      await message.populate([
+        { path: 'sender', select: 'username email avatar profilePicture' },
+        { 
+          path: 'replyTo',
+          select: 'text sender messageType',
+          populate: {
+            path: 'sender',
+            select: 'username'
+          }
+        }
+      ]);
 
       // Deliver to every participant's personal room so it reaches them even
       // if their socket has not joined this conversation's room yet.
@@ -328,7 +355,17 @@ io.on('connection', async (socket) => {
       message.editedAt = Date.now();
       await message.save();
 
-      await message.populate('sender', 'username email avatar');
+      await message.populate([
+        { path: 'sender', select: 'username email avatar profilePicture' },
+        { 
+          path: 'replyTo',
+          select: 'text sender messageType',
+          populate: {
+            path: 'sender',
+            select: 'username'
+          }
+        }
+      ]);
 
       // Deliver to every participant's personal room.
       await emitToParticipants(message.conversationId, 'message edited', message);
