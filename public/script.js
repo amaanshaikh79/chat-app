@@ -823,12 +823,32 @@
     const avatarBg = msg.sender.profilePicture || '#7C3AED';
     const initials = msg.sender.username.substring(0, 2).toUpperCase();
 
+    // Check if message is a GIF or sticker
+    let messageContent = '';
+    if (msg.text.startsWith('[GIF]')) {
+      const gifUrl = msg.text.replace('[GIF]', '').trim();
+      messageContent = `
+        <div class="message-gif">
+          <img src="${gifUrl}" alt="GIF" loading="lazy">
+        </div>
+      `;
+    } else if (msg.text.startsWith('[STICKER]')) {
+      const stickerUrl = msg.text.replace('[STICKER]', '').trim();
+      messageContent = `
+        <div class="message-sticker">
+          <img src="${stickerUrl}" alt="Sticker" loading="lazy">
+        </div>
+      `;
+    } else {
+      messageContent = escapeHtml(msg.text);
+    }
+
     msgEl.innerHTML = `
       <div class="meta">
         <span class="user">${escapeHtml(msg.sender.username)}</span>
         <span class="time">${time}${editedLabel}${statusIcon}</span>
       </div>
-      <div class="bubble">${escapeHtml(msg.text)}</div>
+      <div class="bubble">${messageContent}</div>
       ${msg.reactions?.length > 0 ? renderReactions(msg.reactions) : ''}
     `;
 
@@ -1166,7 +1186,89 @@
   emojiBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     emojiPicker.classList.toggle('hidden');
+    // Close media keyboard if open
+    if (window.mediaKeyboard) {
+      window.mediaKeyboard.hide();
+    }
   });
+
+  // ========== MEDIA KEYBOARD (GIF/EMOJI/STICKER) ==========
+  let mediaKeyboard = null;
+
+  function initMediaKeyboard() {
+    mediaKeyboard = new MediaKeyboard({
+      containerId: 'media-keyboard',
+      onSelect: (media) => {
+        if (media.type === 'emoji') {
+          messageInput.value += media.data;
+          messageInput.focus();
+        } else if (media.type === 'gif') {
+          // Send GIF as a special message
+          sendGifMessage(media.data.url);
+          mediaKeyboard.hide();
+        } else if (media.type === 'sticker') {
+          // Send sticker (future implementation)
+          sendStickerMessage(media.data.url);
+          mediaKeyboard.hide();
+        }
+      }
+    });
+
+    // Make it globally accessible
+    window.mediaKeyboard = mediaKeyboard;
+  }
+
+  // Initialize media keyboard after DOM is ready
+  setTimeout(() => {
+    initMediaKeyboard();
+  }, 100);
+
+  // Media button click handler
+  const mediaBtn = document.getElementById('media-btn');
+  if (mediaBtn) {
+    mediaBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (mediaKeyboard) {
+        mediaKeyboard.toggle();
+        // Close old emoji picker
+        emojiPicker.classList.add('hidden');
+      }
+    });
+  }
+
+  // Send GIF as message
+  function sendGifMessage(gifUrl) {
+    if (!currentConversation) return;
+
+    const gifText = `[GIF] ${gifUrl}`;
+    
+    socket.emit('send message', {
+      conversationId: currentConversation._id,
+      text: gifText,
+      tempId: 'temp-' + Date.now()
+    }, (response) => {
+      if (!response.success) {
+        showToast('Failed to send GIF', 'error');
+      }
+    });
+  }
+
+  // Send sticker as message
+  function sendStickerMessage(stickerUrl) {
+    if (!currentConversation) return;
+
+    const stickerText = `[STICKER] ${stickerUrl}`;
+    
+    socket.emit('send message', {
+      conversationId: currentConversation._id,
+      text: stickerText,
+      tempId: 'temp-' + Date.now()
+    }, (response) => {
+      if (!response.success) {
+        showToast('Failed to send sticker', 'error');
+      }
+    });
+  }
 
   // ========== PROFILE MODAL ==========
   profileBtn.addEventListener('click', () => {

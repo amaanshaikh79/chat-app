@@ -187,6 +187,7 @@
         <form id="send-form" class="send-area" autocomplete="off">
           <div class="send-area-wrapper">
             <button type="button" class="emoji-btn" id="emoji-btn" title="Add emoji">😊</button>
+            <button type="button" class="media-btn" id="media-btn" title="GIFs & Stickers" data-trigger="media-keyboard">🎬</button>
             <input id="message-input" type="text" placeholder="Type a message..." autocomplete="off" maxlength="5000">
             <button type="button" class="attach-btn" id="attach-btn" title="Attach file">📎</button>
           </div>
@@ -225,6 +226,9 @@
       <!-- Emojis will be added here -->
     </div>
   </div>
+
+  <!-- Media Keyboard (GIF/Emoji/Sticker) -->
+  <div id="media-keyboard" class="hidden"></div>
 
   <!-- Toast Container -->
   <div class="toast-container" id="toast-container"></div>
@@ -317,6 +321,8 @@
     <button data-emoji="🔥">🔥</button>
   </div>
 
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="media-keyboard.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
